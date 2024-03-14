@@ -26,12 +26,12 @@
 .def	ilcnt = r23
 .def	olcnt = r24
 
-.equ	s_welcome	=	0b0000_0001
-.equ	s_owaiting	=	0b0000_0010
-.equ	s_uwaiting	=	0b0000_0100
-.equ	s_choose	=	0b0000_1000
-.equ	s_choices	=	0b0001_0000
-.equ	s_results	=	0b0010_0000
+.equ	s_welcome	=	0
+.equ	s_owaiting	=	1
+.equ	s_uwaiting	=	2
+.equ	s_choose	=	3
+.equ	s_choices	=	4
+.equ	s_results	=	5
 
 ;***********************************************************
 ;*  Internal Register Definitions and Constants
@@ -145,7 +145,7 @@ INIT:
 		sts		TCCR1B, mpr			; Normal Mode, prescale 1024
 		
 	;Other
-		clr		state
+		ldi		state, 1<<s_welcome
 		clr		play
 		ldi		waitcnt, $0F
 
@@ -158,14 +158,14 @@ INIT:
 ;*  Main Program
 ;***********************************************************
 MAIN:
-	cpi		state, s_welcome
+	cpi		state, (1<<s_welcome) & (1<<s_uwaiting)
 	breq	M_WELCOME
 
-	ldi		mpr, s_owaiting & s_uwaiting
+	ldi		mpr, (1<<s_owaiting) 
 	and		mpr, state
 	brne	M_WAIT
 
-	cpi		state, s_choose
+	cpi		state, (1<<s_choose)
 	breq	M_START
 
 M_WELCOME:
@@ -179,8 +179,6 @@ M_WAIT:
 	rjmp	M_END
 
 M_START:
-	call	LCDClr
-
 	WRITE_LINE_1	GAME_START
 
 	cpi		play, $00
@@ -196,7 +194,13 @@ M_START:
 	WRITE_LINE_2	SCISSORS
 
 M_END:
+	ldi		mpr, $00
+	out		EIMSK, mpr 
+
 	call	LCDWrite
+
+	ldi		mpr, $03
+	out		EIMSK, mpr
 
 	rjmp	MAIN
 
@@ -205,12 +209,14 @@ M_END:
 ;***********************************************************
 
 LineWrite:
-	lpm		mpr, Z+
+	push	mpr
+LW:	lpm		mpr, Z+
 	st		Y+, mpr
 
 	mov		mpr, YL
 	andi	mpr, $0F
-	brne	LineWrite
+	brne	LW
+	pop		mpr
 
 	ret
 
@@ -239,12 +245,24 @@ CS_END:
 ; Desc:	 
 ;-----------------------------------------------------------
 ReadyUp:
+	push	mpr
+RU:	lds		mpr, UCSR1A ; Check if Transmitter is ready
+	sbrs	mpr, UDRE1 ; Data Register Empty flag
+	rjmp	RU ; Loop until UDR1 is empty
 	ldi		mpr, $FF
-	sts		UDR1, mpr
+	sts		UDR1, mpr ; Move data to transmit data buffer
+	SBI PORTB, 6
 	rcall	WaitClr
+
+	sbrc	state, s_welcome
+	ldi		state, 1<<s_owaiting
+
+	sbrc	state, s_uwaiting
+	ldi		state, 1<<s_choose 
 
 	ldi		mpr, $FF
 	sts		EIFR, mpr
+	pop		mpr
 
 	ret
 
@@ -280,13 +298,15 @@ ILoop:	dec		ilcnt			; decrement ilcnt
 ; Desc:	 
 ;-----------------------------------------------------------
 DataReceived:
+	push	mpr
 	lds		mpr, UDR1 
-
+	CBI		PORTB, 6
 	sbrc	state, s_welcome
-	ldi		state, s_uwaiting
+	ldi		state, 1<<s_uwaiting
 
 	sbrc	state, s_owaiting
-	ldi		state, s_choose
+	ldi		state, 1<<s_choose
+	pop		mpr
 
 	ret
 
@@ -333,4 +353,3 @@ DRAW:
 ;*	Additional Program Includes
 ;***********************************************************
 .include "LCDDriver.asm"		; Include the LCD Driver
-
