@@ -22,6 +22,16 @@
 .def    mpr = r16               ; Multi-Purpose Register
 .def	state = r17				; State of game 
 .def	play = r18				; state of choice 
+.def	waitcnt = r19
+.def	ilcnt = r23
+.def	olcnt = r24
+
+.equ	s_welcome	=	0b0000_0001
+.equ	s_owaiting	=	0b0000_0010
+.equ	s_uwaiting	=	0b0000_0100
+.equ	s_choose	=	0b0000_1000
+.equ	s_choices	=	0b0001_0000
+.equ	s_results	=	0b0010_0000
 
 ;***********************************************************
 ;*  Internal Register Definitions and Constants
@@ -59,11 +69,11 @@
 	    rjmp    INIT            	; Reset interrupt
 
 .org	$0002
-;		rcall	ChoiceSelect
+		rcall	ChoiceSelect
 		reti
 
 .org	$0008
-;		rcall	ReadyUp
+		rcall	ReadyUp
 		reti
 
 .org	$0028
@@ -71,7 +81,7 @@
 		reti
 
 .org	$0032
-;		rcall	DataReceived
+		rcall	DataReceived
 		reti
 
 .org    $0056                   ; End of Interrupt Vectors
@@ -137,6 +147,7 @@ INIT:
 	;Other
 		clr		state
 		clr		play
+		ldi		waitcnt, $0F
 
 		call	LCDInit
 		call	LCDBacklightOn
@@ -147,13 +158,14 @@ INIT:
 ;*  Main Program
 ;***********************************************************
 MAIN:
-	cpi		state, $00
+	cpi		state, s_welcome
 	breq	M_WELCOME
 
-	cpi		state, $01
-	breq	M_WAIT
+	ldi		mpr, s_owaiting & s_uwaiting
+	and		mpr, state
+	brne	M_WAIT
 
-	cpi		state, $02
+	cpi		state, s_choose
 	breq	M_START
 
 M_WELCOME:
@@ -169,8 +181,19 @@ M_WAIT:
 M_START:
 	call	LCDClr
 
-
 	WRITE_LINE_1	GAME_START
+
+	cpi		play, $00
+	breq	M_END 
+
+	sbrc	play, $0
+	WRITE_LINE_2	ROCK
+
+	sbrc	play, $1
+	WRITE_LINE_2	PAPER
+
+	sbrc	play, $2
+	WRITE_LINE_2	SCISSORS
 
 M_END:
 	call	LCDWrite
@@ -193,9 +216,79 @@ LineWrite:
 
 ;-----------------------------------------------------------
 ; Func:	ChoiceSelect
-; Desc:	ur mom 
+; Desc:	Changes play choice from Rock, Paper, or Scissors 
 ;-----------------------------------------------------------
 ChoiceSelect:	
+	cpi		play, $00
+	breq	CS_ROCK
+	
+	cpi		play, $04
+	breq	CS_ROCK
+
+	lsl		play
+	rjmp	CS_END
+
+CS_ROCK:
+	ldi		play, $01
+
+CS_END:
+	ret
+
+;-----------------------------------------------------------
+; Func:	ReadyUp
+; Desc:	 
+;-----------------------------------------------------------
+ReadyUp:
+	ldi		mpr, $FF
+	sts		UDR1, mpr
+	rcall	WaitClr
+
+	ldi		mpr, $FF
+	sts		EIFR, mpr
+
+	ret
+
+;----------------------------------------------------------------
+; Sub:	Wait
+; Desc:	A wait loop that is 16 + 159975*waitcnt cycles or roughly
+;		waitcnt*10ms.  Just initialize wait for the specific amount
+;		of time in 10ms intervals. Here is the general eqaution
+;		for the number of clock cycles in the wait loop:
+;			(((((3*ilcnt)-1+4)*olcnt)-1+4)*waitcnt)-1+16
+;----------------------------------------------------------------
+WaitClr:
+		push	waitcnt			; Save wait register
+		push	ilcnt			; Save ilcnt register
+		push	olcnt			; Save olcnt register
+
+Loop:	ldi		olcnt, 224		; load olcnt register
+OLoop:	ldi		ilcnt, 237		; load ilcnt register
+ILoop:	dec		ilcnt			; decrement ilcnt
+		brne	ILoop			; Continue Inner Loop
+		dec		olcnt		; decrement olcnt
+		brne	OLoop			; Continue Outer Loop
+		dec		waitcnt		; Decrement wait
+		brne	Loop			; Continue Wait loop
+
+		pop		olcnt		; Restore olcnt register
+		pop		ilcnt		; Restore ilcnt register
+		pop		waitcnt		; Restore wait register
+		ret				; Return from subroutine
+
+;-----------------------------------------------------------
+; Func:	DataReceived
+; Desc:	 
+;-----------------------------------------------------------
+DataReceived:
+	lds		mpr, UDR1 
+
+	sbrc	state, s_welcome
+	ldi		state, s_uwaiting
+
+	sbrc	state, s_owaiting
+	ldi		state, s_choose
+
+	ret
 
 ;***********************************************************
 ;*	Stored Program Data
