@@ -72,7 +72,7 @@
 		rcall	ChoiceSelect
 		reti
 
-.org	$0008
+.org	$0004
 		rcall	ReadyUp
 		reti
 
@@ -129,12 +129,12 @@ INIT:
 		;Set frame format: 8 data bits, 2 stop bits
 
 	; Initialize external interrupts
-		ldi		mpr, 0b1000_0010	; initialize falling edge interrupts 
+		ldi		mpr, 0b0000_1010	; initialize falling edge interrupts 
 		sts		EICRA, mpr			; store in register
 			; Set the Interrupt Sense Control to falling edge
 
 		; Configure the External Interrupt Mask
-		ldi		mpr, 0b0000_1001	; conigure INT0, 3
+		ldi		mpr, 0b0000_0011	; conigure INT0, 1
 		out		EIMSK, mpr			; send to register
 
 
